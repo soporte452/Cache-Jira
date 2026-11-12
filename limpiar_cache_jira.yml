@@ -1,6 +1,4 @@
 ---
-
----
 - name: Automatización de Limpieza de Caché y Respuesta a Jira
   hosts: all
   become: false
