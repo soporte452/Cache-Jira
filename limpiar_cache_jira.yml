@@ -5,11 +5,10 @@
   gather_facts: false
 
   vars:
-    jira_server: "https://ess-solutionsca-sandbox.atlassian.net"
+    # Limpia automáticamente cualquier barra '/' sobrante al final de la URL
+    jira_base_url: "{{ jira_server | regex_replace('/$', '') }}"
     jira_user: "{{ vault_jira_user }}"
     jira_api_token: "{{ vault_jira_token }}"
-    jira_issue_key: "{{ tower_webhook_payload.issue.key | default('TICKET-TEST-01') }}"
-    jira_issue_creator: "{{ tower_webhook_payload.issue.fields.creator.displayName | default('Usuario') }}"
 
   tasks:
     - name: 1. Crear directorio de caché de prueba si no existe
@@ -30,10 +29,28 @@
         state: directory
         mode: '0755'
 
-    - name: 4. Notificar a Jira que el trabajo está listo
+    - name: 4. Obtener automáticamente el último ticket creado en Jira (si no vino por Webhook)
       delegate_to: localhost
       ansible.builtin.uri:
-        url: "{{ jira_server }}/rest/api/2/issue/{{ jira_issue_key }}/comment"
+        url: "{{ jira_base_url }}/rest/api/3/search/jql?jql=order+by+created+DESC&maxResults=1&fields=key,creator"
+        method: GET
+        user: "{{ jira_user }}"
+        password: "{{ jira_api_token }}"
+        force_basic_auth: true
+        return_content: true
+        status_code: 200
+      register: ultimo_ticket_jira
+      when: tower_webhook_payload is not defined
+
+    - name: 5. Definir datos dinámicos del ticket recién creado
+      ansible.builtin.set_fact:
+        jira_issue_key: "{{ tower_webhook_payload.issue.key if (tower_webhook_payload is defined) else ultimo_ticket_jira.json.issues[0].key }}"
+        jira_issue_creator: "{{ tower_webhook_payload.issue.fields.creator.displayName if (tower_webhook_payload is defined) else ultimo_ticket_jira.json.issues[0].fields.creator.displayName }}"
+
+    - name: 6. Notificar a Jira que el trabajo está listo
+      delegate_to: localhost
+      ansible.builtin.uri:
+        url: "{{ jira_base_url }}/rest/api/2/issue/{{ jira_issue_key }}/comment"
         method: POST
         user: "{{ jira_user }}"
         password: "{{ jira_api_token }}"
@@ -45,7 +62,7 @@
             Hola {{ jira_issue_creator }},
 
             ✅ Automatización Completada.
-            Ansible Automation Platform ha procesado este ticket. La caché de los servidores ha sido limpiada exitosamente.
+            Ansible Automation Platform ha procesado el ticket {{ jira_issue_key }}. La caché de los servidores ha sido limpiada exitosamente.
 
             Ya puedes proceder a cerrar este ticket.
       when: not clean_result.failed
