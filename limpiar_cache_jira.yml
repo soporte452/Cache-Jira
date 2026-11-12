@@ -1,18 +1,13 @@
 ---
 - name: Automatización de Limpieza de Caché y Respuesta a Jira
-  # Puedes mapear el host dinámicamente si Jira lo envía, o definir un grupo fijo
-  hosts: servidores_web
+  hosts: all
   become: true
   gather_facts: false
 
   vars:
-    # Estas variables deben venir de tus credenciales de AAP (Vault o inyectadas)
     jira_server: "https://ess-solutionsca-sandbox.atlassian.net"
     jira_user: "{{ vault_jira_user }}"
     jira_api_token: "{{ vault_jira_token }}"
-    
-    # AAP inyecta 'tower_webhook_payload' automáticamente cuando recibe el POST de Jira.
-    # Usamos default() por si ejecutas el playbook manualmente para pruebas.
     jira_issue_key: "{{ tower_webhook_payload.issue.key | default('TICKET-TEST-01') }}"
     jira_issue_creator: "{{ tower_webhook_payload.issue.fields.creator.displayName | default('Usuario') }}"
 
@@ -20,8 +15,7 @@
     - name: 1. Ejecutar la limpieza de caché en los ordenadores (Ejemplo con dnf/yum)
       ansible.builtin.command: dnf clean all
       register: clean_result
-      # En un entorno real, usarías módulos específicos como file(state=absent) para borrar carpetas de caché
-      
+
     - name: 2. Limpiar caché de aplicación (Ejemplo borrando contenido de /tmp/app_cache)
       ansible.builtin.file:
         path: /tmp/app_cache/
@@ -34,20 +28,22 @@
         mode: '0777'
 
     - name: 4. Notificar a Jira que el trabajo está listo
-      # Delegamos a localhost porque la llamada a la API de Jira la hace el nodo AAP, no los servidores destino
       delegate_to: localhost
       become: false
-      community.general.jira:
-        uri: "{{ jira_server }}"
-        username: "{{ jira_user }}"
+      ansible.builtin.uri:
+        url: "{{ jira_server }}/rest/api/2/issue/{{ jira_issue_key }}/comment"
+        method: POST
+        user: "{{ jira_user }}"
         password: "{{ jira_api_token }}"
-        issue: "{{ jira_issue_key }}"
-        operation: comment
-        comment: >
-          Hola {{ jira_issue_creator }}, 
-          
-          ✅ **Automatización Completada.**
-          Ansible Automation Platform ha procesado este ticket. La caché de los servidores ha sido limpiada exitosamente. 
-          
-          Ya puedes proceder a cerrar este ticket.
+        force_basic_auth: true
+        body_format: json
+        status_code: 201
+        body:
+          body: |
+            Hola {{ jira_issue_creator }},
+
+            ✅ Automatización Completada.
+            Ansible Automation Platform ha procesado este ticket. La caché de los servidores ha sido limpiada exitosamente.
+
+            Ya puedes proceder a cerrar este ticket.
       when: clean_result.rc == 0
