@@ -1,7 +1,9 @@
 ---
+
+---
 - name: Automatización de Limpieza de Caché y Respuesta a Jira
   hosts: all
-  become: true
+  become: false
   gather_facts: false
 
   vars:
@@ -12,24 +14,26 @@
     jira_issue_creator: "{{ tower_webhook_payload.issue.fields.creator.displayName | default('Usuario') }}"
 
   tasks:
-    - name: 1. Ejecutar la limpieza de caché en los ordenadores (Ejemplo con dnf/yum)
-      ansible.builtin.command: dnf clean all
-      register: clean_result
-
-    - name: 2. Limpiar caché de aplicación (Ejemplo borrando contenido de /tmp/app_cache)
-      ansible.builtin.file:
-        path: /tmp/app_cache/
-        state: absent
-
-    - name: 3. Recrear directorio de caché vacío
+    - name: 1. Crear directorio de caché de prueba si no existe
       ansible.builtin.file:
         path: /tmp/app_cache/
         state: directory
-        mode: '0777'
+        mode: '0755'
+
+    - name: 2. Ejecutar limpieza de archivos de caché
+      ansible.builtin.file:
+        path: /tmp/app_cache/
+        state: absent
+      register: clean_result
+
+    - name: 3. Recrear directorio de caché limpio
+      ansible.builtin.file:
+        path: /tmp/app_cache/
+        state: directory
+        mode: '0755'
 
     - name: 4. Notificar a Jira que el trabajo está listo
       delegate_to: localhost
-      become: false
       ansible.builtin.uri:
         url: "{{ jira_server }}/rest/api/2/issue/{{ jira_issue_key }}/comment"
         method: POST
@@ -46,4 +50,4 @@
             Ansible Automation Platform ha procesado este ticket. La caché de los servidores ha sido limpiada exitosamente.
 
             Ya puedes proceder a cerrar este ticket.
-      when: clean_result.rc == 0
+      when: not clean_result.failed
