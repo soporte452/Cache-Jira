@@ -7,7 +7,7 @@
 
   vars:
     # Estas variables deben venir de tus credenciales de AAP (Vault o inyectadas)
-    jira_server: "https://tudominio.atlassian.net"
+    jira_server: "https://ess-solutionsca-sandbox.atlassian.net"
     jira_user: "{{ vault_jira_user }}"
     jira_api_token: "{{ vault_jira_token }}"
     
