@@ -5,7 +5,6 @@
   gather_facts: false
 
   vars:
-    # Limpia automáticamente cualquier barra '/' sobrante al final de la URL
     jira_base_url: "{{ jira_server | regex_replace('/$', '') }}"
     jira_user: "{{ vault_jira_user }}"
     jira_api_token: "{{ vault_jira_token }}"
@@ -32,13 +31,20 @@
     - name: 4. Obtener automáticamente el último ticket creado en Jira (si no vino por Webhook)
       delegate_to: localhost
       ansible.builtin.uri:
-        url: "{{ jira_base_url }}/rest/api/3/search/jql?jql=order+by+created+DESC&maxResults=1&fields=key,creator"
-        method: GET
+        url: "{{ jira_base_url }}/rest/api/3/search/jql"
+        method: POST
         user: "{{ jira_user }}"
         password: "{{ jira_api_token }}"
         force_basic_auth: true
+        body_format: json
         return_content: true
         status_code: 200
+        body:
+          jql: "created >= -30d ORDER BY created DESC"
+          maxResults: 1
+          fields:
+            - key
+            - creator
       register: ultimo_ticket_jira
       when: tower_webhook_payload is not defined
 
